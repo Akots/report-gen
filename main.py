@@ -17,15 +17,15 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 EXCEL_FILE       = resource_path('Дані подача РАПОРТІВ.xlsx')
-OUTPUT_DIR       = resource_path('Результаты')
+OUTPUT_DIR       = resource_path('Результати')
 
 TEMPLATE_SWITCH = {
     '156': {
-        'dovidka': resource_path('доповідь - Шаблон.docx'),
-        'raport': resource_path('РАПОРТ СЗЧ - ШАБЛОН.docx'),
+        'dovidka': resource_path('ШАБЛОНИ/доповідь - Шаблон.docx'),
+        'raport': resource_path('ШАБЛОНИ/РАПОРТ СЗЧ - ШАБЛОН.docx'),
     },
     '71': {
-        'raport': resource_path('РАПОРТ СЗЧ - ШАБЛОН 71а.docx'),
+        'raport': resource_path('ШАБЛОНИ/РАПОРТ СЗЧ - ШАБЛОН 71а.docx'),
     },
 }
 
