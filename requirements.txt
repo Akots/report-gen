@@ -1,6 +1,6 @@
 pandas
 openpyxl
 python-docx
-pymorphy2
+pymorphy2==0.8
 pyinstaller
 regex
