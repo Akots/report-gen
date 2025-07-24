@@ -1,6 +1,6 @@
 pandas
 openpyxl
 python-docx
-pymorphy2[fast]
+pymorphy2
 pyinstaller
 regex
