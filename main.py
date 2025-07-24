@@ -14,7 +14,13 @@ morph = MorphAnalyzer(lang='uk', path=DICT_PATH)
 
 # Функція для коректного визначення шляхів до ресурсів при запуску з exe
 def resource_path(relative_path):
-    base_path = getattr(sys, '_MEIPASS', os.getcwd())
+    import sys, os
+    if getattr(sys, 'frozen', False):
+        # Запущено з .exe
+        base_path = os.path.dirname(sys.executable)
+    else:
+        # Запущено з .py
+        base_path = os.path.dirname(__file__)
     return os.path.join(base_path, relative_path)
 
 EXCEL_FILE       = resource_path('Дані подача РАПОРТІВ.xlsx')
