@@ -1,0 +1,6 @@
+pandas
+openpyxl
+python-docx
+pymorphy2[fast]
+pyinstaller
+regex
