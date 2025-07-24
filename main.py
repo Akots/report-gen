@@ -9,7 +9,8 @@ from pymorphy2 import MorphAnalyzer
 from manual_declensions_ua import manual_declensions_ua
 
 # Морфологический анализ для украинских имен
-morph = MorphAnalyzer(lang='uk')
+DICT_PATH = os.path.join(os.path.dirname(__file__), 'pymorphy2_dicts_uk/data')
+morph = MorphAnalyzer(lang='uk', path=DICT_PATH)
 
 # Функція для коректного визначення шляхів до ресурсів при запуску з exe
 def resource_path(relative_path):

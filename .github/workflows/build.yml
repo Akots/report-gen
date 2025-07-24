@@ -24,7 +24,7 @@ jobs:
 
       - name: Build executable with PyInstaller
         run: |
-          pyinstaller --onefile --noconsole main.py
+          pyinstaller --onefile --noconsole main.py --add-data "pymorphy2_dicts_uk;./pymorphy2_dicts_uk"
 
       - name: Upload generated EXE
         uses: actions/upload-artifact@v4
