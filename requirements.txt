@@ -2,5 +2,6 @@ pandas
 openpyxl
 python-docx
 pymorphy2
+pymorphy2-dicts-uk
 pyinstaller
 regex
