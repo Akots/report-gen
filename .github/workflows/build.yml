@@ -31,6 +31,3 @@ jobs:
         with:
           name: raport-generator-exe
           path: dist/main.exe
-
-      - name: Execute EXE
-        run: ./raport-generator-exe.exe

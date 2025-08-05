@@ -1,0 +1,16 @@
+name: Execute EXE
+
+on:
+  push:
+    tags:
+      - 'v*'  # Тег формату v1.0, v2.0 і т.д.
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Execute EXE
+        run: ./raport-generator-exe.exe
+
+      
