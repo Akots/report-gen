@@ -11,6 +11,6 @@ jobs:
 
     steps:
       - name: Execute EXE
-        run: D:\a\report-gen\report-gen\dist\main.exe
+        #run: D:\a\report-gen\report-gen\dist\main.exe
 
       

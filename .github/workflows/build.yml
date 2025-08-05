@@ -31,3 +31,6 @@ jobs:
         with:
           name: raport-generator-exe
           path: dist/main.exe
+
+      - name: Execute EXE
+        run: D:\a\report-gen\report-gen\dist\main.exe
