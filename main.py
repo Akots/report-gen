@@ -453,6 +453,7 @@ for _, row in df.iterrows():
 
     fio = row.get('ПІБ', '')
     if not isinstance(fio, str) or not fio.strip():
+        print("[пропущено] Порожнє або некоректне ПІБ")
         continue
 
     set_format_style('old' if format_value == "47" else 'new')
@@ -559,4 +560,5 @@ for _, row in df.iterrows():
         filename = f"А5003 РАПОРТ {fio.split()[0].upper()} {szch_date}.docx"
         doc.save(os.path.join(OUTPUT_DIR, filename))
 
+print("Всього рядків у Excel:", len(df))
 print('Готово! Документи збережено в', OUTPUT_DIR)
