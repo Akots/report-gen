@@ -35,7 +35,20 @@ TEMPLATE_SWITCH = {
     '71': {
         'raport': resource_path('ШАБЛОНИ/РАПОРТ СЗЧ - ШАБЛОН 71а.docx'),
     },
+    '47': {
+        'dovidka': resource_path('ШАБЛОНИ/доповідь - ШАБЛОН 47.docx'),
+    },
 }
+
+STYLE_PROFILE = 'new'  # 'new' (дефолт) або 'old'
+
+def set_format_style(profile: str):
+    """Встановити стиль форматування для поточного кроку генерації."""
+    global STYLE_PROFILE
+    STYLE_PROFILE = 'old' if str(profile).lower() == 'old' else 'new'
+
+def get_style() -> str:
+    return STYLE_PROFILE
 
 VAR_TO_COL = {
     'ДАННІ_ПРИЗВ':      'ДАННІ_ПРИЗВ',
@@ -70,14 +83,71 @@ def decline_text(text, case):
         declined.append(inflected.word if inflected else word)
     return ' '.join(declined)
 
-def extract_department_fields(title):
-    match = list(re.finditer(r"\d+\s+\S+\s+роти", title, flags=re.IGNORECASE))
-    if match:
-        start = match[-1].start()
-        department_nom = title[start:].strip()
-    else:
-        parts = re.split(r"\s*[—–\-]\s*", title)
-        department_nom = parts[-1].strip() if parts else title.strip()
+def normalize_department(s: str) -> str:
+    if not s:
+        return s
+    s = re.sub(r"\s{2,}", " ", s).strip()
+
+    TAIL = r"\b\d+\s+\S+\s+батальйону(?:\s+військової\s+частини\s+[AА]\d+)?\b"
+
+    # Якщо однакові хвости йдуть підряд — згорнути до одного
+    s = re.sub(rf"({TAIL})(?:\s+{TAIL})+", r"\1", s, flags=re.IGNORECASE)
+
+    # Якщо хвіст трапився кілька разів (рознесено) — залишити перший
+    spans = [m.span() for m in re.finditer(TAIL, s, flags=re.IGNORECASE)]
+    if len(spans) > 1:
+        for start, end in reversed(spans[1:]):
+            s = (s[:start].rstrip() + " " + s[end:]).strip()
+        s = re.sub(r"\s{2,}", " ", s)
+
+    return s
+
+def extract_department_fields(title: str):
+    """
+    Витягує підрозділ із тексту посади, напр.:
+      - '... 1 механізованої роти 1 механізованого батальйону (в/ч Аxxxx)'
+      - 'Група зв'язку ... штабу 1 механізованого батальйону'
+      - 'мінометної батареї 1 механізованого батальйону'
+    Повертає (department_nom, department_gen).
+    """
+    t = (title or "").strip().replace("’", "'")
+
+    patterns = [
+        # 1) ГРУПА штабу ... батальйону [в/ч]
+        r"(Група\s+[^,\n]*?\s+штабу\s+\d+\s+\S+\s+батальйону(?:\s+військової\s+частини\s+[AА]\d+)?)",
+        # 2) ... роти ... батальйону [в/ч]
+        r"(\d+\s+\S+\s+роти\s+\d+\s+\S+\s+батальйону(?:\s+військової\s+частини\s+[AА]\d+)?)",
+        # 3) (НОВЕ) *батареї* ... батальйону [в/ч]
+        #    захоплюємо прикметник перед 'батареї' (напр. 'мінометної батареї')
+        r"((?:\S+\s+)?батареї\s+\d+\s+\S+\s+батальйону(?:\s+військової\s+частини\s+[AА]\d+)?)",
+        # 4) штабу ... батальйону [в/ч]
+        r"(штабу\s+\d+\s+\S+\s+батальйону(?:\s+військової\s+частини\s+[AА]\d+)?)",
+        # 5) ... батальйону [в/ч]
+        r"(\d+\s+\S+\s+батальйону(?:\s+військової\s+частини\s+[AА]\d+)?)",
+    ]
+
+    department_nom = None
+    for pat in patterns:
+        m = re.search(pat, t, flags=re.IGNORECASE)
+        if m:
+            department_nom = m.group(1).strip()
+            break
+
+    if not department_nom:
+        # Фолбек: беремо від останнього "якоря" до кінця.
+        # ВАЖЛИВО: 'батареї' стоїть ПЕРЕД 'взводу/відділення', щоб віддати перевагу рівню батареї.
+        anchor_pat = r"(батареї|роти|штабу|батальйону|взводу|відділення)(.*)$"
+        m2 = list(re.finditer(anchor_pat, t, flags=re.IGNORECASE))
+        if m2:
+            department_nom = (m2[-1].group(0)).strip()
+        else:
+            # останній запасний варіант — права частина після тире
+            parts = re.split(r"\s*[—–\-]\s*", t)
+            department_nom = parts[-1].strip() if parts else t
+
+    # Нормалізуємо (прибираємо дубль хвоста, зайві пробіли тощо)
+    department_nom = normalize_department(department_nom)
+
     department_gen = decline_text(department_nom, "gent")
     return department_nom, department_gen
 
@@ -142,13 +212,41 @@ def to_genitive(text):
     inflected = [morph.parse(w)[0].inflect({'gent'}).word if morph.parse(w)[0].inflect({'gent'}) else w for w in words]
     return ' '.join(inflected)
 
-def format_name(text):
-    if not isinstance(text, str): return ''
-    parts = text.split()
+def cap_ua(s: str) -> str:
+    if not isinstance(s, str): return ''
+    # Іван-Григорович -> Іван-Григорович
+    return '-'.join(w[:1].upper() + w[1:].lower() if w else '' for w in s.split('-'))
+
+def format_name(full: str, style: str = None) -> str:
+    """ПІБ у залежності від стилю:
+       new: 'Власюк Іван Іванович'
+       old: 'ВЛАСЮК Іван Іванович' (як було раніше)
+    """
+    st = (style or get_style())
+    if not isinstance(full, str): return ''
+    parts = full.split()
     if not parts: return ''
-    surname = parts[0].upper()
-    rest = [w.capitalize() for w in parts[1:]]
+    if st == 'old':
+        surname = parts[0].upper()
+    else:
+        surname = cap_ua(parts[0])
+    rest = [cap_ua(w) for w in parts[1:]]
     return ' '.join([surname] + rest)
+
+def short_fio(full: str, style: str = None) -> str:
+    """Коротка форма: 'І. Власюк' (new) або 'І. ВЛАСЮК' (old)"""
+    st = (style or get_style())
+    if not full or not isinstance(full, str): return ""
+    parts = full.strip().split()
+    if len(parts) < 2:
+        return full.upper() if st == 'old' else cap_ua(full)
+    if st == 'old':
+        surname = parts[0].upper()
+    else:
+        surname = cap_ua(parts[0])
+    name_initial = parts[1][:1].upper() + '.'
+    return f"{name_initial} {surname}"
+
 
 def replace_placeholders(doc, ctx):
     for p in doc.paragraphs:
@@ -174,6 +272,22 @@ def replace_all_placeholders_xml(doc, data):
                 for key, val in data.items():
                     if key in node.text:
                         node.text = node.text.replace(key, val)
+#Получити під шаблон по назві тега
+def extract_block_by_tags(doc, tag_name):
+    start_tag = f"{{{{{tag_name}}}}}"
+    end_tag = f"{{{{/{tag_name}}}}}"
+    blocks = []
+    in_block = False
+    for p in doc.paragraphs:
+        if start_tag in p.text:
+            in_block = True
+            continue  # не включати тег
+        elif end_tag in p.text:
+            in_block = False
+            break
+        elif in_block:
+            blocks.append(copy.deepcopy(p._element))
+    return blocks
 
 def short_fio(full_name):
     if not full_name or not isinstance(full_name, str): return ""
@@ -244,6 +358,41 @@ def insert_block_by_placeholder(doc, placeholder, block_elements):
     if not found:
         print(f"[insert_block_by_placeholder] ⚠️ Не знайдено плейсхолдер '{placeholder}' у документі")
 
+def _time_from_any(val):
+    if val is None: return None
+    if isinstance(val, (pd.Timestamp, datetime)):
+        return val.hour, val.minute
+    # Excel дробова частка доби
+    if isinstance(val, (int, float)) and not pd.isna(val):
+        total_seconds = int(round(float(val) * 24 * 3600))
+        return (total_seconds // 3600) % 24, (total_seconds % 3600) // 60
+    s = str(val).strip()
+    m = re.search(r'(\d{1,2})[:\.](\d{1,2})', s)
+    if m:
+        h, mi = int(m.group(1)), int(m.group(2))
+        return max(0, min(23, h)), max(0, min(59, mi))
+    try:
+        dt = pd.to_datetime(s, errors='coerce', dayfirst=True)
+        if not pd.isna(dt):
+            return dt.hour, dt.minute
+    except Exception:
+        pass
+    return None
+
+def format_time_str(val, style: str = None) -> str:
+    """Час у залежності від стилю:
+       new: 07.10
+       old: 07:10
+    """
+    st = (style or get_style())
+    hm = _time_from_any(val)
+    if not hm: return ''
+    h, m = hm
+    if st == 'old':
+        return f"{h:02d}:{m:02d}"
+    else:
+        return f"{h:02d}.{m:02d}"
+
 # === 1. Читання даних ===
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 df = pd.read_excel(EXCEL_FILE)
@@ -306,8 +455,9 @@ for _, row in df.iterrows():
     if not isinstance(fio, str) or not fio.strip():
         continue
 
+    set_format_style('old' if format_value == "47" else 'new')
+
     ctx = {}
-    unit = str(row.get('ВІЙСЬК_ЧАСТИНА', '') or '')
 
     base_posada = str(row.get('ПОСАДА', '') or '')
     department, _ = extract_department_fields(base_posada)
@@ -341,6 +491,7 @@ for _, row in df.iterrows():
     ctx['ТЕРРІТОРІЯ_РН'] = str(row.get('ТЕРРІТОРІЯ_РН','') or '')
     ctx['ДОПОВІДЬ_ВІД'] = str(row.get('ДОПОВІДЬ_ВІД','') or '')
     ctx['ПІДРОЗДІЛ'] = department
+    ctx['ПІДРОЗДІЛ_РОД'] =  to_genitive(department)
     ctx['ЗБРОЯ'] = str(row.get('ЗБРОЯ','') or '')
 
     dopov_cherg = row.get('ЧАС_ДОПОВІДІ_ЧЕРГОВОМУ')
@@ -358,10 +509,12 @@ for _, row in df.iterrows():
     tval = row.get('СЗЧ_ЧАС')
     ctx['ТЕРМІН_РОЗСЛІДУВАННЯ'] = get_investigation_deadline(date_val, 11)
     tstr = str(tval) if pd.notna(tval) else ''
-    ctx['СЗЧ_ЧАС'] = tstr.split(':')[0] + ':' + tstr.split(':')[1] if ':' in tstr else tstr
+    ctx['СЗЧ_ЧАС'] = format_time_str(tval)
 
     obst = row.get('ОБСТАВИНИ')
     ctx['ОБСТАВИНИ'] = ', ' + str(obst).strip() if pd.notna(obst) and str(obst).strip() else ''
+
+    dict_tamplates_doc = Document(resource_path('ШАБЛОНИ/СЛОВНИК ПІДШАБЛОНІВ.docx'))
 
     for var, col in VAR_TO_COL.items():
         raw = row.get(col)
@@ -376,7 +529,15 @@ for _, row in df.iterrows():
     if 'dovidka' in templates:
         doc = Document(templates['dovidka'])
         replace_placeholders(doc, ctx)
-        filename = f"А5003 Довідка_{suffix}.docx"
+
+        if maino_value == "майно втрачене":
+            maino_block = extract_block_by_tags(dict_tamplates_doc, "БЛОК_МАЙНО_ВТРАЧЕНЕ_ДОВІДКА")
+        else:
+            maino_block = extract_block_by_tags(dict_tamplates_doc, "БЛОК_МАЙНО_НАЯВНЕ_ДОВІДКА")
+        
+        insert_block_by_placeholder(doc, "{{МАЙНО}}", maino_block)
+
+        filename = ("ДД_СЗЧ_" if format_value == "47" else "А5003 Довідка_") + f"{suffix}.docx"
         doc.save(os.path.join(OUTPUT_DIR, filename))
 
     # Генерація рапорту з блоком ПОДАВАЧ
@@ -384,24 +545,14 @@ for _, row in df.iterrows():
         raport_template_path = templates['raport']
         doc = Document(raport_template_path)
         podavach_fio_raw = row.get('ПОДАВАЧ_ПІБ', '')
-        if format_value == "156" and not is_empty(podavach_fio_raw):
-            ctx['КОМУ_КЛОПОЧЕ'] = 'Командиру 1 механізованого батальйону військової частини А5003'
-            podavach_doc = Document(resource_path('ШАБЛОНИ/РАПОРТ ПОДАВАЧ - ШАБЛОН.docx'))
-            # не треба тут підставляти replace_placeholders(podavach_doc, ctx)
-            podavach_block = [copy.deepcopy(el) for el in podavach_doc._element.body]
-            insert_block_by_placeholder(doc, "{{ПОДАВАЧ}}", podavach_block)
-            # Тепер — після вставки блоку — підставляємо всі дані у ВЕСЬ документ, включно з блоком
-            replace_all_placeholders_xml(doc, {f"{{{{{k}}}}}": str(v) for k, v in ctx.items()})
-        else:
-            ctx['ПОДАВАЧ'] = ''
-            replace_placeholders(doc, ctx)
+        ctx['ПОДАВАЧ'] = ''
+        replace_placeholders(doc, ctx)
         
-        if maino_value == "з майном":
-            maino_doc = Document(resource_path('ШАБЛОНИ/РАПОРТ МАЙНО - ШАБЛОН.docx'))
+        if maino_value == "майно втрачене":
+            maino_block = extract_block_by_tags(dict_tamplates_doc, "БЛОК_МАЙНО_ВТРАЧЕНЕ")
         else:
-            maino_doc = Document(resource_path('ШАБЛОНИ/РАПОРТ МАЙНО ВІДСУТНЄ - ШАБЛОН.docx'))
+            maino_block = extract_block_by_tags(dict_tamplates_doc, "БЛОК_МАЙНО_НАЯВНЕ")
 
-        maino_block = [copy.deepcopy(el) for el in maino_doc._element.body]
         insert_block_by_placeholder(doc, "{{МАЙНО}}", maino_block)
 
         szch_date = ctx.get('СЗЧ_ДАТА', '').strip()
